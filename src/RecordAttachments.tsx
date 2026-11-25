@@ -1,60 +1,98 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, FileText, FolderOpen, LoaderCircle, Paperclip, X } from 'lucide-react';
 import { driveFailure } from './driveAttachments';
 import type { DriveAccount, DriveAttachment, DriveBridge, DriveConnection, LocalAttachment } from './driveAttachments';
 
-export function useRecordAttachments(account: DriveAccount, drive?: DriveBridge) {
+export function useDriveConnection(account: DriveAccount, drive?: DriveBridge) {
   const [connection, setConnection] = useState<DriveConnection>({ email: null, configured: false });
   const [checking, setChecking] = useState(Boolean(drive));
   const [activity, setActivity] = useState('');
   const [error, setError] = useState('');
-  const [files, setFiles] = useState<LocalAttachment[]>([]);
-  const handles = useRef(new Set<string>());
+
+  const refreshConnection = useCallback(async () => {
+    if (!drive) return;
+    try {
+      setConnection(await drive.status(account));
+    } catch (failure) {
+      setError(driveFailure(failure, 'Could not check the Google Drive connection.'));
+    } finally {
+      setChecking(false);
+    }
+  }, [account, drive]);
+
+  useEffect(() => { void refreshConnection(); }, [refreshConnection]);
 
   useEffect(() => {
-    if (!drive) return;
-    let active = true;
-    const tokens = handles.current;
-    drive.status(account).then(status => {
-      if (active) setConnection(status);
-    }).catch(failure => {
-      if (active) setError(driveFailure(failure, 'Could not check the Google Drive connection.'));
-    }).finally(() => { if (active) setChecking(false); });
-    return () => {
-      active = false;
-      void drive.release(account, [...tokens]).catch(() => {});
-      tokens.clear();
-    };
-  }, [drive, account]);
+    if (!connection.expiresAt) return;
+    const timer = window.setTimeout(() => {
+      setConnection(current => current === connection ? { email: null, configured: current.configured } : current);
+    }, connection.expiresAt - Date.now());
+    return () => window.clearTimeout(timer);
+  }, [connection]);
 
-  async function run(message: string, action: () => Promise<void>) {
-    if (activity) return;
-    setActivity(message);
+  async function changeConnection(action: 'connect' | 'disconnect') {
+    if (!drive || checking || activity) return;
+    const connecting = action === 'connect';
+    setActivity(connecting ? 'Connecting to Google Drive…' : 'Disconnecting Google Drive…');
     setError('');
     try {
-      await action();
+      const next = await drive[action](account);
+      setConnection(next);
+      return next;
     } catch (failure) {
-      setError(driveFailure(failure, 'Could not use Google Drive.'));
       if (connection.email) await refreshConnection();
+      setError(driveFailure(failure, connecting ? 'Could not connect Google Drive.' : 'Could not disconnect Google Drive.'));
+      throw failure;
     } finally {
       setActivity('');
     }
   }
 
-  function connect() {
-    if (drive) return run('Connecting to Google Drive…', async () => setConnection(await drive.connect(account)));
+  return {
+    drive, connection, checking, activity, error, refreshConnection,
+    connect: () => changeConnection('connect'), disconnect: () => changeConnection('disconnect'),
+  };
+}
+
+export type DriveConnectionControls = ReturnType<typeof useDriveConnection>;
+
+export function useRecordAttachments(account: DriveAccount, driveConnection: DriveConnectionControls) {
+  const { drive, connection, refreshConnection } = driveConnection;
+  const [activity, setActivity] = useState('');
+  const [error, setError] = useState('');
+  const [files, setFiles] = useState<LocalAttachment[]>([]);
+  const handles = useRef(new Set<string>());
+  const busy = activity || driveConnection.activity;
+
+  useEffect(() => {
+    if (!drive) return;
+    const tokens = handles.current;
+    return () => {
+      void drive.release(account, [...tokens]).catch(() => {});
+      tokens.clear();
+    };
+  }, [drive, account]);
+
+  function changeConnection(action: 'connect' | 'disconnect') {
+    if (busy) return;
+    setError('');
+    void driveConnection[action]().catch(() => {});
   }
 
-  function disconnect() {
-    if (drive) return run('Disconnecting Google Drive…', async () => setConnection(await drive.disconnect(account)));
-  }
-
-  function choose() {
-    if (drive) return run('Choosing files…', async () => {
+  async function choose() {
+    if (!drive || busy) return;
+    setActivity('Choosing files…');
+    setError('');
+    try {
       const chosen = await drive.pick(account);
       for (const file of chosen) handles.current.add(file.token);
       setFiles(previous => [...previous, ...chosen]);
-    });
+    } catch (failure) {
+      setError(driveFailure(failure, 'Could not choose files.'));
+      if (connection.email) await refreshConnection();
+    } finally {
+      setActivity('');
+    }
   }
 
   function remove(token: string) {
@@ -77,11 +115,10 @@ export function useRecordAttachments(account: DriveAccount, drive?: DriveBridge)
     }
   }
 
-  async function refreshConnection() {
-    if (drive) await drive.status(account).then(setConnection).catch(() => {});
-  }
-
-  return { drive, connection, checking, activity, error, files, connect, disconnect, choose, remove, upload, refreshConnection };
+  return {
+    ...driveConnection, activity: busy, error: error || driveConnection.error, files, choose, remove, upload,
+    connect: () => changeConnection('connect'), disconnect: () => changeConnection('disconnect'),
+  };
 }
 
 function fileSize(size: number) {

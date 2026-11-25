@@ -144,13 +144,14 @@ export function createWebDrive(): DriveBridge | undefined {
     const identity = await getDriveUser(token.token);
     session = { ...token, ...identity };
     loginHint = identity.email;
-    return { email: identity.email, configured: true };
+    return { email: identity.email, configured: true, expiresAt: token.expiresAt };
   };
 
   return {
     async status() {
       if (!activeSession()) await loadGoogleOAuth();
-      return { email: activeSession()?.email ?? null, configured: true };
+      const current = activeSession();
+      return { email: current?.email ?? null, configured: true, expiresAt: current?.expiresAt };
     },
     connect() {
       connecting ??= connect().finally(() => { connecting = undefined; });

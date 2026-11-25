@@ -4,7 +4,7 @@ import { collection, doc, onSnapshot, type Firestore } from 'firebase/firestore'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import {
   Archive, ArrowDownToLine, ArrowUpRight, BookOpen, Building2, Camera, Check, ChevronDown,
-  CircleAlert, FileText, Image, LoaderCircle, LogOut, MapPin, Moon, Plus,
+  CircleAlert, FileText, HardDrive, Image, LoaderCircle, LogOut, MapPin, Moon, Plus,
   Search, ShieldCheck, Shirt, SlidersHorizontal, Tag, X, Trash2, Pencil, PackageOpen, Printer, Settings2,
   type LucideIcon,
 } from 'lucide-react';
@@ -12,7 +12,8 @@ import logoUrl from './assets/manolo-fortich-seal.png';
 import printLogoUrl from './assets/manolo-fortich-seal-print.png';
 import { auth, db, setupError, signInMessage } from './firebase';
 import { deleteItem, firestoreMessage, rememberDriveFolder, writeItem, writePrintSettings } from './collectionStore';
-import { AttachmentEditor, RecordDriveFiles, useRecordAttachments } from './RecordAttachments';
+import { AttachmentEditor, RecordDriveFiles, useDriveConnection, useRecordAttachments } from './RecordAttachments';
+import type { DriveConnectionControls } from './RecordAttachments';
 import { driveFailure } from './driveAttachments';
 import type { DriveAccount, DriveBridge, DriveRecord } from './driveAttachments';
 import { createWebDrive } from './webDrive';
@@ -32,6 +33,7 @@ import type { PrintFormat, PrintLayout } from './printLayout';
 type SyncStatus = 'loading' | 'cached' | 'synced' | 'error';
 type PrintSelection = { items: SavedItem[]; filters: PrintRecordFilters; ownershipFilter: string; search: string };
 type DeleteError = { message: string; reconnect: boolean };
+type ThemeSwitchProps = { darkMode: boolean; onToggleTheme: () => void };
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   loading: 'Connecting to Firebase', cached: 'Showing cached records',
@@ -97,19 +99,23 @@ export default function App() {
     }
   }
 
+  function toggleTheme() {
+    setDarkMode(enabled => !enabled);
+  }
+
   if (!auth || !db) return <SetupScreen error={setupError} />;
   if (!authChecked) return <div className="loading-screen" role="status"><LoaderCircle className="spin"/> Checking your sign-in…</div>;
-  if (!user) return <LoginScreen onLogin={login} busy={busy} error={error} />;
+  if (!user) return <LoginScreen onLogin={login} busy={busy} error={error}
+    darkMode={darkMode} onToggleTheme={toggleTheme} />;
 
   const session = auth;
   return <Register key={user.uid} user={user} database={db} onSignOut={() => signOut(session)}
-    darkMode={darkMode} onToggleTheme={() => setDarkMode(enabled => !enabled)} />;
+    darkMode={darkMode} onToggleTheme={toggleTheme} />;
 }
 
 function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
   user: User; database: Firestore; onSignOut: () => Promise<void>;
-  darkMode: boolean; onToggleTheme: () => void;
-}) {
+} & ThemeSwitchProps) {
   const [items, setItems] = useState<SavedItem[]>([]);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading');
   const [collectionError, setCollectionError] = useState('');
@@ -124,7 +130,6 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<DeleteError | null>(null);
-  const [connectingDrive, setConnectingDrive] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [printSettings, setPrintSettings] = useState<PrintSettings | null>(null);
   const [printSetupOpen, setPrintSetupOpen] = useState(false);
@@ -135,6 +140,8 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
   const driveAccount = useMemo(() => ({
     project: import.meta.env.VITE_FIREBASE_PROJECT_ID?.trim() ?? '', uid: user.uid,
   }), [user.uid]);
+  const driveConnection = useDriveConnection(driveAccount, drive);
+  const connectingDrive = Boolean(driveConnection.activity);
 
   useEffect(() => {
     let loadedFromServer = false;
@@ -238,23 +245,22 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
       setNotice(item.driveFolderId ? 'Record deleted. Its folder is in Google Drive Trash.' : 'Record deleted.');
     } catch (failure) {
       setDeleteError({ message: firestoreMessage(failure, 'Could not delete this record.'), reconnect });
+      if (reconnect) void driveConnection.refreshConnection();
     } finally {
       setDeleting(false);
     }
   }
 
-  async function reconnectDriveForDeletion() {
-    if (!drive || connectingDrive || deleting) return;
-    setConnectingDrive(true);
+  async function connectDrive(retryDeletion = false) {
+    if (deleting) return;
     try {
-      if ((await drive.connect(driveAccount)).email) {
+      const connection = await driveConnection.connect();
+      if (retryDeletion && connection?.email) {
         setDeleteError(null);
         setNotice('Google Drive connected. Try deleting the record again.');
       }
     } catch (failure) {
-      setDeleteError({ message: driveFailure(failure, 'Could not connect Google Drive.'), reconnect: true });
-    } finally {
-      setConnectingDrive(false);
+      if (retryDeletion) setDeleteError({ message: driveFailure(failure, 'Could not connect Google Drive.'), reconnect: true });
     }
   }
 
@@ -318,17 +324,27 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
         </button>;
       })}
       <div className="sidebar-bottom">
-        <button className="theme-switch" type="button" role="switch" aria-checked={darkMode} onClick={onToggleTheme}>
-          <Moon size={16} aria-hidden="true"/>
-          <span>Dark mode</span>
-          <span className="theme-switch-track" aria-hidden="true"/>
-        </button>
+        <div className="sidebar-drive">
+          {driveConnection.connection.email ? <div className="sidebar-drive-status" role="status">
+            <Check size={16} aria-hidden="true"/>
+            <div><b>Google Drive connected</b><small title={driveConnection.connection.email}>{driveConnection.connection.email}</small></div>
+          </div> : <button className="button button-light" type="button"
+            disabled={!drive || driveConnection.checking || connectingDrive || deleting || signingOut} onClick={() => void connectDrive()}>
+            {driveConnection.checking || connectingDrive
+              ? <LoaderCircle className="spin" size={16} aria-hidden="true"/>
+              : <HardDrive size={16} aria-hidden="true"/>}
+            {driveConnection.checking ? 'Checking Google Drive…' : connectingDrive ? 'Connecting…' : 'Connect Google Drive'}
+          </button>}
+          {!drive && <p>Google Drive setup required.</p>}
+          {driveConnection.error && <p className="sidebar-drive-error" role="alert">{driveConnection.error}</p>}
+        </div>
+        <ThemeSwitch darkMode={darkMode} onToggleTheme={onToggleTheme}/>
         <div className="sync-card" data-sync-status={syncStatus}>
           <div className="sync-icon"><ShieldCheck size={17}/></div><div><b>{syncLabel}</b></div><span className="status-dot"/>
         </div>
         <div className="profile">
           <div className="avatar">{(user.email || 'M').slice(0, 1).toUpperCase()}</div>
-          <div className="profile-info"><b>{user.email}</b><small>USER</small></div>
+          <div className="profile-info"><b>{user.email}</b><small>Admin</small></div>
           <button className="icon-button" title="Sign out" aria-label="Sign out" disabled={signingOut} onClick={signOutFromRegister}><LogOut size={16}/></button>
         </div>
       </div>
@@ -435,8 +451,8 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
     {selected && !tagDialog && <DetailPanel item={selected} driveAccount={driveAccount} drive={drive} onClose={() => setSelectedId(null)} onEdit={() => setEditing(selected)}
       onTag={() => setTagDialog(selected)}
       onDelete={() => removeItem(selected)} deleting={deleting} error={deleteError}
-      connectingDrive={connectingDrive} onConnectDrive={reconnectDriveForDeletion}/>}
-    {editing && <ItemModal item={editing === 'new' ? null : editing} database={database} driveAccount={driveAccount} drive={drive}
+      connectingDrive={connectingDrive} onConnectDrive={() => void connectDrive(true)}/>}
+    {editing && <ItemModal item={editing === 'new' ? null : editing} database={database} driveAccount={driveAccount} driveConnection={driveConnection}
       onClose={() => setEditing(null)} onSaved={finishEdit}/>}
     {notice && <div className="toast" role="status"><Check size={16}/>{notice}<button aria-label="Dismiss message" onClick={() => setNotice('')}><X size={15}/></button></div>}
   </div>;
@@ -494,7 +510,18 @@ function SetupScreen({ error }: { error?: string }) {
     <div className="setup-note"><ShieldCheck size={18}/><span>Firestore rules in this project require an authenticated Firebase user for every read and write.</span></div>
   </div></div>;
 }
-function LoginScreen({ onLogin, busy, error }: { onLogin: (email: string, password: string) => void; busy: boolean; error: string }) {
+function ThemeSwitch({ darkMode, onToggleTheme, compact = false }: ThemeSwitchProps & { compact?: boolean }) {
+  return <button className="theme-switch" type="button" role="switch" aria-label="Dark mode"
+    aria-checked={darkMode} title={compact ? 'Dark mode' : undefined} onClick={onToggleTheme}>
+    <Moon size={16} aria-hidden="true"/>
+    {!compact && <span>Dark mode</span>}
+    <span className="theme-switch-track" aria-hidden="true"/>
+  </button>;
+}
+
+function LoginScreen({ onLogin, busy, error, darkMode, onToggleTheme }: {
+  onLogin: (email: string, password: string) => void; busy: boolean; error: string;
+} & ThemeSwitchProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -504,6 +531,7 @@ function LoginScreen({ onLogin, busy, error }: { onLogin: (email: string, passwo
   }
 
   return <div className="login-screen"><div className="login-card">
+    <ThemeSwitch darkMode={darkMode} onToggleTheme={onToggleTheme} compact/>
     <AppLogo />
     <div className="eyebrow">MUSEUM INVENTORY SYSTEM</div>
     <h1>Sign In</h1>
@@ -558,8 +586,8 @@ function optionsWithCurrent(options: string[], current: string) {
   return current && !options.includes(current) ? [...options, current] : options;
 }
 
-function ItemModal({ item, database, driveAccount, drive, onClose, onSaved }: {
-  item: SavedItem | null; database: Firestore; driveAccount: DriveAccount; drive?: DriveBridge;
+function ItemModal({ item, database, driveAccount, driveConnection, onClose, onSaved }: {
+  item: SavedItem | null; database: Firestore; driveAccount: DriveAccount; driveConnection: DriveConnectionControls;
   onClose: () => void; onSaved: (inventoryId: string, uploaded: number) => void;
 }) {
   const [form, setForm] = useState<Item>(item ?? EMPTY_ITEM);
@@ -567,7 +595,7 @@ function ItemModal({ item, database, driveAccount, drive, onClose, onSaved }: {
   const [uploaded, setUploaded] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const attachments = useRecordAttachments(driveAccount, drive);
+  const attachments = useRecordAttachments(driveAccount, driveConnection);
   const busy = saving || Boolean(attachments.activity);
 
   function change(key:keyof Item,value:string) { setForm(prev=>({...prev,[key]:value})); }

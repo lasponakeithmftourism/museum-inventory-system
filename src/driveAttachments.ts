@@ -2,7 +2,7 @@ import { validDriveId } from '../shared/driveApi.mjs';
 import type { DriveAttachment, DriveRecord } from '../shared/driveApi.mjs';
 
 export type DriveAccount = { project: string; uid: string };
-export type DriveConnection = { email: string | null; configured: boolean };
+export type DriveConnection = { email: string | null; configured: boolean; expiresAt?: number };
 export type LocalAttachment = { token: string; name: string; size: number };
 export type { DriveAttachment, DriveRecord };
 
