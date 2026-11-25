@@ -14,7 +14,8 @@ import { auth, db, setupError, signInMessage } from './firebase';
 import { deleteItem, firestoreMessage, rememberDriveFolder, writeItem, writePrintSettings } from './collectionStore';
 import { AttachmentEditor, RecordDriveFiles, useRecordAttachments } from './RecordAttachments';
 import { driveFailure } from './driveAttachments';
-import type { DriveAccount, DriveRecord } from './driveAttachments';
+import type { DriveAccount, DriveBridge, DriveRecord } from './driveAttachments';
+import { createWebDrive } from './webDrive';
 import {
   CATEGORY_LABELS, CONDITIONS, DEFAULT_PRINT_SETTINGS, EMPTY_ITEM, FIELD_LABELS, ITEM_FIELDS, OWNERSHIP_STATUSES, TYPES,
   compareInventoryIds, conditionTone, inventoryYears, matchesInventoryFilters, readItem, readPrintSettings, recordInventoryYear, recordsCsv,
@@ -129,6 +130,7 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
   const [printSelection, setPrintSelection] = useState<PrintSelection | null>(null);
   const [printFormat, setPrintFormat] = useState<PrintFormat>('summary');
   const [printLayout, setPrintLayout] = useState<PrintLayout>(DEFAULT_PRINT_LAYOUT);
+  const [drive] = useState(() => window.museumDrive ?? createWebDrive());
   const driveAccount = useMemo(() => ({
     project: import.meta.env.VITE_FIREBASE_PROJECT_ID?.trim() ?? '', uid: user.uid,
   }), [user.uid]);
@@ -213,8 +215,7 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
     setDeleteError(null);
     let reconnect = false;
     async function updateDrive(action: 'check' | 'trash') {
-      const drive = window.museumDrive;
-      if (!drive) throw new Error('Open the desktop app to delete a record linked to Google Drive.');
+      if (!drive) throw new Error('Configure Google Drive for this website to delete linked records.');
       try {
         await drive.trashFolder(driveAccount, item.id, item.driveFolderId, action);
       } catch (failure) {
@@ -235,7 +236,6 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
   }
 
   async function reconnectDriveForDeletion() {
-    const drive = window.museumDrive;
     if (!drive || connectingDrive || deleting) return;
     setConnectingDrive(true);
     try {
@@ -351,7 +351,7 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
         </section>
         <section className="register-card">
           <div className="register-header">
-            <div><h2>All collection records</h2><span>{filtered.length} {filtered.length === 1 ? 'record' : 'records'} shown</span></div>
+            <div><h2>All Collection Records</h2><span>{filtered.length} {filtered.length === 1 ? 'record' : 'records'} shown</span></div>
             <div className="register-actions">
               <div className="searchbox">
                 <Search size={16}/><input aria-label="Search collection" placeholder="Search records…" value={search} onChange={e => setSearch(e.target.value)}/>
@@ -425,11 +425,11 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
       </PrintPreview>}
     </>}
     {printSetupOpen && printSettings && <PrintSetupModal settings={printSettings} onClose={() => setPrintSetupOpen(false)} onSave={savePrintSettings}/>}
-    {selected && !tagDialog && <DetailPanel item={selected} driveAccount={driveAccount} onClose={() => setSelectedId(null)} onEdit={() => setEditing(selected)}
+    {selected && !tagDialog && <DetailPanel item={selected} driveAccount={driveAccount} drive={drive} onClose={() => setSelectedId(null)} onEdit={() => setEditing(selected)}
       onTag={() => setTagDialog(selected)}
       onDelete={() => removeItem(selected)} deleting={deleting} error={deleteError}
       connectingDrive={connectingDrive} onConnectDrive={reconnectDriveForDeletion}/>}
-    {editing && <ItemModal item={editing === 'new' ? null : editing} database={database} driveAccount={driveAccount}
+    {editing && <ItemModal item={editing === 'new' ? null : editing} database={database} driveAccount={driveAccount} drive={drive}
       onClose={() => setEditing(null)} onSaved={finishEdit}/>}
     {notice && <div className="toast" role="status"><Check size={16}/>{notice}<button aria-label="Dismiss message" onClick={() => setNotice('')}><X size={15}/></button></div>}
   </div>;
@@ -512,8 +512,8 @@ function LoginScreen({ onLogin, busy, error }: { onLogin: (email: string, passwo
     <div className="login-secure"></div>
   </div></div>;
 }
-function DetailPanel({ item, driveAccount, onClose, onEdit, onTag, onDelete, deleting, connectingDrive, onConnectDrive, error }: {
-  item: SavedItem; driveAccount: DriveAccount; onClose: () => void; onEdit: () => void; onTag: () => void; onDelete: () => void;
+function DetailPanel({ item, driveAccount, drive, onClose, onEdit, onTag, onDelete, deleting, connectingDrive, onConnectDrive, error }: {
+  item: SavedItem; driveAccount: DriveAccount; drive?: DriveBridge; onClose: () => void; onEdit: () => void; onTag: () => void; onDelete: () => void;
   deleting: boolean; connectingDrive: boolean; onConnectDrive: () => void; error: DeleteError | null;
 }) {
   const entries = ITEM_FIELDS.filter(key => key !== 'lastUpdated');
@@ -541,7 +541,7 @@ function DetailPanel({ item, driveAccount, onClose, onEdit, onTag, onDelete, del
       <div className="detail-fields">{entries.map(key => <div className={`detail-field ${key === 'description' || key === 'provenanceKnownHistory' || key === 'followUpRemarks' ? 'wide' : ''}`} key={key}>
         <span>{FIELD_LABELS[key]}</span><p>{item[key] || <i>Not recorded</i>}</p>
       </div>)}</div>
-      {item.driveFolderId && <RecordDriveFiles key={item.driveFolderId} account={driveAccount} folderId={item.driveFolderId}/>}
+      {item.driveFolderId && <RecordDriveFiles key={item.driveFolderId} account={driveAccount} drive={drive} folderId={item.driveFolderId}/>}
       <div className="last-updated">Last updated {item.lastUpdated ? new Date(item.lastUpdated).toLocaleString() : '—'}</div>
     </aside>
   </div>;
@@ -551,8 +551,8 @@ function optionsWithCurrent(options: string[], current: string) {
   return current && !options.includes(current) ? [...options, current] : options;
 }
 
-function ItemModal({ item, database, driveAccount, onClose, onSaved }: {
-  item: SavedItem | null; database: Firestore; driveAccount: DriveAccount;
+function ItemModal({ item, database, driveAccount, drive, onClose, onSaved }: {
+  item: SavedItem | null; database: Firestore; driveAccount: DriveAccount; drive?: DriveBridge;
   onClose: () => void; onSaved: (inventoryId: string, uploaded: number) => void;
 }) {
   const [form, setForm] = useState<Item>(item ?? EMPTY_ITEM);
@@ -560,7 +560,7 @@ function ItemModal({ item, database, driveAccount, onClose, onSaved }: {
   const [uploaded, setUploaded] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const attachments = useRecordAttachments(driveAccount);
+  const attachments = useRecordAttachments(driveAccount, drive);
   const busy = saving || Boolean(attachments.activity);
 
   function change(key:keyof Item,value:string) { setForm(prev=>({...prev,[key]:value})); }

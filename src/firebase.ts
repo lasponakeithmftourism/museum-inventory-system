@@ -1,5 +1,5 @@
 import { FirebaseError, initializeApp } from 'firebase/app';
-import { initializeAuth, inMemoryPersistence } from 'firebase/auth';
+import { browserSessionPersistence, initializeAuth, inMemoryPersistence } from 'firebase/auth';
 import type { Auth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
@@ -20,7 +20,9 @@ function connect(): { auth: Auth | null; db: Firestore | null; setupError?: stri
 
   try {
     const app = initializeApp(values);
-    const auth = initializeAuth(app, { persistence: inMemoryPersistence });
+    const isDesktop = Boolean(window.museumPrinting);
+    const persistence = isDesktop ? inMemoryPersistence : browserSessionPersistence;
+    const auth = initializeAuth(app, { persistence });
     return { auth, db: getFirestore(app) };
   } catch {
     return { auth: null, db: null, setupError: 'Firebase could not start. Check the web app values in .env.local and restart the app.' };

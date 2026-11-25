@@ -16,7 +16,7 @@ A Windows desktop register for museum artifacts, artworks, books, costumes, buil
    npm.cmd run dev
    ```
 
-The app shows a setup screen when required Firebase settings are missing. Restart the development app after changing `.env.local`. Once configured, sign in with your Firebase account each time you open or reload the app.
+The app shows a setup screen when required Firebase settings are missing. Restart the development app after changing `.env.local`. On desktop, sign in with your Firebase account each time you open or reload the app. In the browser, your sign-in lasts for the tab session and survives reloads.
 
 Run `npm.cmd run typecheck` to check the TypeScript code or `npm.cmd run build` to check and build the renderer.
 
@@ -38,14 +38,21 @@ Records include Inventory ID, Item Title, Description, Item Type, Creator/Artist
 
 ## Google Drive attachments
 
-1. Enable the [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com) in your Google Cloud project.
-2. Configure OAuth consent for your Google account and create a [Desktop app OAuth client](https://developers.google.com/workspace/guides/create-credentials#desktop-app). If your project uses an external testing audience, add your Google account as a test user.
-3. Download the client JSON. Sign in to the collection register, open **Add collection record**, and select **Connect Google Drive** in **Photos & attachments**. Select the JSON and approve access in your browser.
-4. Choose **Add files** to select photos or documents, then save the record.
+Enable the [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com) and configure OAuth consent in Google Cloud. Keep the Web and Desktop OAuth clients in the same Cloud project so the app can use the same Drive folders.
+
+### Render website
+
+The production build reads the public Web OAuth client ID from `.env.production`. In Google Cloud, add your live HTTPS origin to the Web application client's **Authorized JavaScript origins**. Use **Connect Google Drive** in **Photos & attachments**, choose the account that owns the museum folders, and grant file access. Reconnect if Google access expires or you reload the site. An optional `VITE_GOOGLE_DRIVE_CLIENT_ID` build variable overrides the public default. [Google web authorization](https://developers.google.com/identity/oauth2/web/guides/use-token-model)
+
+### Desktop app
+
+Create a [Desktop app OAuth client](https://developers.google.com/workspace/guides/create-credentials#desktop-app). Connect from **Photos & attachments** to import the JSON once, or set `GOOGLE_DRIVE_DESKTOP_CLIENT_FILE` to its local path in `.env.local` for development or in the desktop app's environment. The desktop app remembers the client on this device for future connections. If your OAuth consent screen uses an external testing audience, add your Google account as a test user.
+
+Choose **Add files** in either version to select photos or documents, then save the record.
 
 The app creates a folder such as `My Drive / Museum Inventory System / 2026 / 2026-001` based on the inventory ID. Legacy records without a known year use `Undated`. Open the record to see its files and the folder link. Edit the record to add more files. If an upload fails, keep the editor open and choose **Retry uploads** to continue with the saved inventory ID.
 
-Google credentials are encrypted on your device. Firestore stores the folder reference. Drive sharing permissions control who can open the files.
+Desktop credentials are encrypted on your device. The website holds its short-lived access token in memory. Firestore stores the folder reference. Drive sharing permissions control who can open the files.
 
 When you delete a linked record, the app moves its folder and contents to Google Drive Trash before removing the record from the register. The highest ID becomes available for reuse after deletion finishes. A new record with a reused ID gets its own Drive folder when you add attachments. Connect a Google account with permission to trash the original folder. If a deletion is interrupted, reopen the record and choose **Finish deletion** to retry.
 

@@ -1,8 +1,10 @@
+import { validDriveId } from '../shared/driveApi.mjs';
+import type { DriveAttachment, DriveRecord } from '../shared/driveApi.mjs';
+
 export type DriveAccount = { project: string; uid: string };
 export type DriveConnection = { email: string | null; configured: boolean };
 export type LocalAttachment = { token: string; name: string; size: number };
-export type DriveAttachment = { id: string; name: string; size?: string; mimeType?: string };
-export type DriveRecord = { id: string; inventoryId: string; year: string };
+export type { DriveAttachment, DriveRecord };
 
 export interface DriveBridge {
   status(account: DriveAccount): Promise<DriveConnection>;
@@ -17,7 +19,7 @@ export interface DriveBridge {
 }
 
 export function readDriveFolderId(value: unknown) {
-  return typeof value === 'string' && /^[\w-]{1,200}$/.test(value) ? value : '';
+  return validDriveId(value) ? value : '';
 }
 
 export function driveFailure(error: unknown, fallback: string) {

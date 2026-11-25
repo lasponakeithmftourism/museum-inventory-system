@@ -3,10 +3,11 @@ const { createHash, randomBytes, randomUUID } = require('node:crypto');
 const { once } = require('node:events');
 const { readFile, rename, rm, stat, writeFile } = require('node:fs/promises');
 const { createServer } = require('node:http');
+const { parseEnv } = require('node:util');
 const path = require('node:path');
 const { productName } = require('../package.json');
 
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const { DRIVE_SCOPE, googleFetch, getDriveUser } = require('../shared/driveApi.mjs');
 const accessTokens = new Map();
 
 function hash(value) {
@@ -40,6 +41,31 @@ async function saveCredentials(profile, credentials) {
   }
 }
 
+async function readDesktopClient(file) {
+  const info = await stat(file);
+  if (!info.isFile() || info.size > 64 * 1024) throw new Error('Invalid Desktop OAuth JSON.');
+  const { installed } = JSON.parse(await readFile(file, 'utf8'));
+  if (typeof installed?.client_id !== 'string' ||
+      !/^[\w-]+\.apps\.googleusercontent\.com$/.test(installed.client_id)) throw new Error('Invalid Desktop OAuth client.');
+  return {
+    client_id: installed.client_id,
+    ...(typeof installed.client_secret === 'string' && { client_secret: installed.client_secret }),
+  };
+}
+
+async function configuredClient() {
+  try {
+    let file = process.env.GOOGLE_DRIVE_DESKTOP_CLIENT_FILE?.trim();
+    if (!file && !app.isPackaged) {
+      const env = parseEnv(await readFile(path.join(app.getAppPath(), '.env.local'), 'utf8'));
+      file = env.GOOGLE_DRIVE_DESKTOP_CLIENT_FILE?.trim();
+    }
+    return file ? await readDesktopClient(path.resolve(app.getAppPath(), file)) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function chooseClient(window) {
   const { filePaths } = await dialog.showOpenDialog(window, {
     title: 'Select the Google OAuth Desktop app JSON',
@@ -48,15 +74,7 @@ async function chooseClient(window) {
   });
   if (!filePaths.length) return null;
   try {
-    const file = filePaths[0];
-    if ((await stat(file)).size > 64 * 1024) throw new Error();
-    const { installed } = JSON.parse(await readFile(file, 'utf8'));
-    if (typeof installed?.client_id !== 'string' ||
-      !/^[\w-]+\.apps\.googleusercontent\.com$/.test(installed.client_id)) throw new Error();
-    return {
-      client_id: installed.client_id,
-      ...(typeof installed.client_secret === 'string' && { client_secret: installed.client_secret }),
-    };
+    return await readDesktopClient(filePaths[0]);
   } catch {
     throw new Error('Select the JSON for a Desktop app OAuth client from Google Cloud.');
   }
@@ -108,14 +126,6 @@ async function browserAuthorization(window, client) {
   }
 }
 
-async function googleFetch(url, options = {}, timeout = 30_000) {
-  try {
-    return await fetch(url, { ...options, redirect: 'manual', signal: AbortSignal.timeout(timeout) });
-  } catch {
-    throw new Error('Could not reach Google Drive. Check your internet connection and try again.');
-  }
-}
-
 async function exchangeToken(client, parameters) {
   const response = await googleFetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -141,38 +151,34 @@ function rememberAccessToken(profile, refreshToken, tokens) {
 
 async function driveStatus(profile) {
   const saved = await readCredentials(profile);
-  return { email: saved?.refreshToken ? saved.email : null, configured: Boolean(saved?.client) };
+  return { email: saved?.refreshToken ? saved.email : null, configured: Boolean(saved?.client ?? await configuredClient()) };
 }
 
 async function connectDrive(window, profile) {
   const saved = await readCredentials(profile);
-  const client = saved?.client ?? await chooseClient(window);
+  const client = saved?.client ?? await configuredClient() ?? await chooseClient(window);
   if (!client) return { email: null, configured: false };
   if (!await safeStorage.isAsyncEncryptionAvailable() ||
     (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')) {
     throw new Error('The system credential store is unavailable. Google Drive could not be connected.');
   }
+  if (!saved?.client) await saveCredentials(profile, { client });
   const tokens = await exchangeToken(client, await browserAuthorization(window, client));
   if (!tokens.refresh_token || !tokens.scope?.split(' ').includes(DRIVE_SCOPE)) {
     throw new Error('Google did not grant ongoing Drive access. Connect again and allow access to files created by the app.');
   }
-  const response = await googleFetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)', {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
-  });
-  if (!response.ok) throw new Error('Could not open Google Drive. Check that the Google Drive API is enabled in your Google Cloud project.');
-  const { user } = await response.json();
-  if (!user?.emailAddress || !user.permissionId) throw new Error('Google Drive did not return the connected account.');
-  await saveCredentials(profile, {
-    client, refreshToken: tokens.refresh_token, email: user.emailAddress, accountId: user.permissionId,
-  });
+  const account = await getDriveUser(tokens.access_token);
+  await saveCredentials(profile, { client, refreshToken: tokens.refresh_token, ...account });
   rememberAccessToken(profile, tokens.refresh_token, tokens);
-  return { email: user.emailAddress, configured: true };
+  return { email: account.email, configured: true };
 }
 
 async function disconnectDrive(profile) {
+  const saved = await readCredentials(profile).catch(() => null);
   accessTokens.delete(profile);
-  await rm(credentialsPath(profile), { force: true });
-  return { email: null, configured: false };
+  if (saved?.client) await saveCredentials(profile, { client: saved.client });
+  else await rm(credentialsPath(profile), { force: true });
+  return { email: null, configured: Boolean(saved?.client ?? await configuredClient()) };
 }
 
 async function driveSession(profile) {

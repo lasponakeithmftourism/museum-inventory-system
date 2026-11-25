@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, FileText, FolderOpen, LoaderCircle, Paperclip, X } from 'lucide-react';
 import { driveFailure } from './driveAttachments';
-import type { DriveAccount, DriveAttachment, DriveConnection, LocalAttachment } from './driveAttachments';
+import type { DriveAccount, DriveAttachment, DriveBridge, DriveConnection, LocalAttachment } from './driveAttachments';
 
-export function useRecordAttachments(account: DriveAccount) {
-  const drive = window.museumDrive;
+export function useRecordAttachments(account: DriveAccount, drive?: DriveBridge) {
   const [connection, setConnection] = useState<DriveConnection>({ email: null, configured: false });
   const [checking, setChecking] = useState(Boolean(drive));
   const [activity, setActivity] = useState('');
@@ -36,6 +35,7 @@ export function useRecordAttachments(account: DriveAccount) {
       await action();
     } catch (failure) {
       setError(driveFailure(failure, 'Could not use Google Drive.'));
+      if (connection.email) await refreshConnection();
     } finally {
       setActivity('');
     }
@@ -64,7 +64,7 @@ export function useRecordAttachments(account: DriveAccount) {
   }
 
   async function upload(folderId: string, onUploaded: () => void) {
-    if (!drive) throw new Error('Open the desktop app to upload attachments.');
+    if (!drive) throw new Error('Configure Google Drive to upload attachments.');
     try {
       for (const file of files) {
         setActivity(`Uploading ${file.name}…`);
@@ -102,7 +102,7 @@ export function AttachmentEditor({ attachments, folderId }: {
         <Paperclip size={14}/> Add files
       </button>}
     </div>
-    {!drive && <p>Open the desktop app to upload to Google Drive.</p>}
+    {!drive && <p>Google Drive requires setup for this website.</p>}
     {drive && checking && <p role="status">Checking Google Drive connection…</p>}
     {drive && !checking && (connection.email ? <div className="attachment-account">
       <span>Google Drive · {connection.email}</span>
@@ -110,7 +110,7 @@ export function AttachmentEditor({ attachments, folderId }: {
     </div> : <div className="attachment-connect">
       <p>Connect Google Drive to upload files when you save this record.</p>
       <button className="button button-light" type="button" onClick={connect} disabled={!!activity}>Connect Google Drive</button>
-      {!connection.configured && <details>
+      {window.museumDrive && !connection.configured && <details>
         <summary>First-time Google Drive setup</summary>
         <p>Enable the Google Drive API in Google Cloud, configure OAuth consent, and create a Desktop app OAuth client. Download its JSON and select it when connecting.</p>
         <a href="https://developers.google.com/workspace/guides/create-credentials#desktop-app" target="_blank" rel="noreferrer">Google Cloud setup guide <ArrowUpRight size={12}/></a>
@@ -136,12 +136,11 @@ function DriveFolderLink({ folderId }: { folderId: string }) {
     target="_blank" rel="noreferrer"><FolderOpen size={15}/> Open Drive folder <ArrowUpRight size={13}/></a>;
 }
 
-export function RecordDriveFiles({ account, folderId }: { account: DriveAccount; folderId: string }) {
+export function RecordDriveFiles({ account, drive, folderId }: { account: DriveAccount; drive?: DriveBridge; folderId: string }) {
   const [files, setFiles] = useState<DriveAttachment[]>([]);
-  const [loading, setLoading] = useState(Boolean(window.museumDrive));
+  const [loading, setLoading] = useState(Boolean(drive));
 
   useEffect(() => {
-    const drive = window.museumDrive;
     if (!drive) return;
     let active = true;
     drive.list(account, folderId).then(result => {
@@ -150,7 +149,7 @@ export function RecordDriveFiles({ account, folderId }: { account: DriveAccount;
       // The folder remains available in the browser under Google Drive's access rules.
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [account, folderId]);
+  }, [account, drive, folderId]);
 
   return <section className="record-attachments" aria-label="Photos and attachments">
     <div className="attachment-heading"><h3>Photos &amp; attachments</h3><DriveFolderLink folderId={folderId}/></div>
