@@ -1,11 +1,15 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isMuseumStaff() {
+      return request.auth != null && request.auth.uid in ['NBTukfg9JGdqkEgNLHF9IeSb05K2'];
+    }
+
     match /museumCollections/{inventoryId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isMuseumStaff();
     }
     match /museumSettings/{settingId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isMuseumStaff();
     }
   }
 }

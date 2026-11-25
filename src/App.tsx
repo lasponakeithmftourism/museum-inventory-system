@@ -340,7 +340,6 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
         <div className="welcome-row">
           <div>
             <h1>Museum Inventory System</h1>
-            <p>CHURVA-CHURVA DIVISION</p>
           </div>
           <RegisterClock/>
         </div>
