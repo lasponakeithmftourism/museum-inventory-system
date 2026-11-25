@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { PrintPreview, PrintRecordFilterFields } from './PrintPreview';
-import { printGeometry, printPageCss } from './printLayout';
+import { paperDimensions, printGeometry, printPageCss } from './printLayout';
+import { SheetPreview } from './SheetPreview';
 import type { PrintGeometry, PrintLayout } from './printLayout';
 import { compareInventoryIds, inventoryYears, matchesInventoryFilters } from './records';
 import type { PrintRecordFilters, SavedItem } from './records';
@@ -12,8 +13,7 @@ const TAG_GAP_MM = 2;
 
 function sheetGrid(page: PrintGeometry | null, size: StickerSize) {
   if (!page) return { columns: 0, capacity: 0 };
-  const width = page.landscape ? page.height : page.width;
-  const height = page.landscape ? page.width : page.height;
+  const { width, height } = paperDimensions(page);
   const pitch = size * 25.4 + TAG_GAP_MM;
   const slots = (span: number) => Math.floor((span + TAG_GAP_MM + 1e-6) / pitch);
   const columns = slots(width - page.margins.left - page.margins.right);
@@ -38,14 +38,13 @@ export function TagGenerator({ items, logo, onClose }: { items: SavedItem[]; log
   const page = useMemo(() => printGeometry(layout), [layout]);
   const { columns, capacity } = sheetGrid(page, size);
   const sheets = capacity ? Math.ceil(selected.length / capacity) : 0;
-  const content = useMemo(() => <div className="print-document sticker-print-document">
-    {Array.from({ length: sheets }, (_, index) => {
-      const start = index * capacity;
-      return <div className="sticker-sheet" key={index} style={{ gridTemplateColumns: `repeat(${columns}, ${size}in)`, gap: `${TAG_GAP_MM}mm` }}>
-        {selected.slice(start, start + capacity).map(item => <StickerLabel key={item.id} item={item} size={size} logo={logo}/>)}
-      </div>;
-    })}
-  </div>, [capacity, columns, logo, selected, sheets, size]);
+  const sheetGrids = useMemo(() => Array.from({ length: sheets }, (_, index) => {
+    const start = index * capacity;
+    return <div className="sticker-sheet" key={index} style={{ gridTemplateColumns: `repeat(${columns}, ${size}in)`, gap: `${TAG_GAP_MM}mm` }}>
+      {selected.slice(start, start + capacity).map(item => <StickerLabel key={item.id} item={item} size={size} logo={logo}/>)}
+    </div>;
+  }), [capacity, columns, logo, selected, sheets, size]);
+  const content = useMemo(() => <div className="print-document sticker-print-document">{sheetGrids}</div>, [sheetGrids]);
 
   function toggleRecord(id: string) {
     setSelectedIds(previous => {
@@ -62,9 +61,9 @@ export function TagGenerator({ items, logo, onClose }: { items: SavedItem[]; log
 
   return <>
     {page && <style>{printPageCss(page)}</style>}
-    {content}
     <PrintPreview job={{ kind: 'tags', count: selected.length, sheets }} content={content}
-      layout={layout} page={page} onLayout={setLayout} onClose={onClose}>
+      layout={layout} page={page} onLayout={setLayout} onClose={onClose}
+      browserPreview={page && <SheetPreview page={page} sheets={sheetGrids} label="Tag sheet preview"/>}>
       <div className="tag-filter-fields">
         <PrintRecordFilterFields filters={filters} years={years} types={types} onFilters={setFilters}/>
       </div>

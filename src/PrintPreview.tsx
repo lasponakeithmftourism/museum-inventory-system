@@ -10,10 +10,14 @@ type Preview = { content: ReactElement; page: PrintGeometry; url: string };
 
 type PrintJob = { kind: 'register'; count: number } | { kind: 'tags'; count: number; sheets: number };
 
-export function PrintPreview({ job, content, layout, page, onLayout, onSetup, onClose, children }: {
+export type PrintPreviewProps = {
   job: PrintJob; content: ReactElement; layout: PrintLayout; page: PrintGeometry | null;
+  browserPreview?: ReactNode; previewReady?: boolean;
   onLayout: (layout: PrintLayout) => void; onSetup?: () => void; onClose: () => void; children: ReactNode;
-}) {
+};
+
+export function PrintPreview({ job, content, layout, page, onLayout, onSetup, onClose, browserPreview,
+  previewReady = true, children }: PrintPreviewProps) {
   const desktop = window.museumPrinting;
   const { count } = job;
   const tags = job.kind === 'tags';
@@ -55,11 +59,11 @@ export function PrintPreview({ job, content, layout, page, onLayout, onSetup, on
     };
   }, [attempt, content, count, desktop, fits, page]);
 
-  const printDisabled = !page || !count || !fits || printing || (!!desktop && !previewUrl);
+  const printDisabled = !page || !count || !fits || printing || (desktop ? !previewUrl : !previewReady);
 
   async function print() {
     if (!page || printDisabled) return;
-    // Remove the embedded PDF while Chromium renders the print document.
+    // Hide the preview while the browser renders the print document.
     flushSync(() => { setPrinting(true); setPrintError(''); });
     try {
       if (!desktop) {
@@ -81,7 +85,7 @@ export function PrintPreview({ job, content, layout, page, onLayout, onSetup, on
     if (!printing) onClose();
   }
 
-  return <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}
+  const dialog = <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}
     onKeyDown={event => { if (event.key === 'Escape') close(); }}>
     <section className="print-preview-dialog" data-print-kind={job.kind} role="dialog" aria-modal="true" aria-labelledby="preview-title">
       <div className="modal-head">
@@ -128,7 +132,7 @@ export function PrintPreview({ job, content, layout, page, onLayout, onSetup, on
             {tags && <p>Use Actual size (100%) in the printer dialog.</p>}
             <button className="button button-primary print-preview-action" onClick={print} disabled={printDisabled}>
               {printing ? <LoaderCircle className="spin" size={16}/> : <Printer size={16}/>}
-              {desktop ? 'Print…' : 'Open browser preview'}
+              {desktop || browserPreview !== undefined ? 'Print…' : 'Open browser preview'}
             </button>
           </div>
         </aside>
@@ -137,7 +141,7 @@ export function PrintPreview({ job, content, layout, page, onLayout, onSetup, on
             : !count ? <div className="preview-message">{tags ? 'Select inventory records to preview their tags.' : 'No records match the active filters.'}</div>
             : !page ? <div className="preview-message">Enter four margins that fit on the selected paper.</div>
             : !fits ? <div className="preview-message">Choose margins and paper that leave room for at least one tag.</div>
-            : !desktop ? <div className="preview-message">Open your browser’s print preview to see the pages.</div>
+            : !desktop ? browserPreview ?? <div className="preview-message">Open your browser’s print preview to see the pages.</div>
             : previewError ? <div className="preview-message" role="alert">{previewError}<button className="button button-light" onClick={() => setAttempt(attempt + 1)}>Retry preview</button></div>
             : previewUrl ? <iframe className="print-preview-frame" title={tags ? 'Paginated tag preview' : 'Paginated register preview'} src={`${previewUrl}#toolbar=0&navpanes=0&view=FitH`} />
             : <div className="preview-message" role="status"><LoaderCircle className="spin" size={18}/> Preparing preview…</div>}
@@ -145,6 +149,11 @@ export function PrintPreview({ job, content, layout, page, onLayout, onSetup, on
       </div>
     </section>
   </div>;
+
+  return <>
+    {content}
+    {dialog}
+  </>;
 }
 
 export function PrintRecordFilterFields({ filters, years, types, onFilters }: {

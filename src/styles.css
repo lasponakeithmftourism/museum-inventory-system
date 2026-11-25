@@ -108,6 +108,15 @@ fieldset.form-grid{border:0;margin:0;padding:0;min-width:0}
 .tag-record-option>span>span{grid-column:1/-1}
 .tag-record-option small,.tag-record-empty{color:var(--muted);font-size:11px}
 .tag-record-empty{margin:0;padding:10px}
+.sheet-preview{height:100%;overflow:auto;scrollbar-gutter:stable;padding:18px}
+.sheet-preview-stack{display:grid;justify-items:center;gap:16px}
+.sheet-preview-frame{position:relative;overflow:hidden;background:#fff;box-shadow:0 2px 8px #1f261c28}
+.sheet-preview-paper{position:absolute;top:0;left:0;transform-origin:top left}
+.register-preview-measure{position:fixed;top:0;left:0;visibility:hidden;pointer-events:none}
+.register-sheet{display:flex;flex-direction:column;background:#fff;color:#20251e;font:8pt Arial,sans-serif;overflow-wrap:anywhere}
+.register-sheet-body{display:flow-root;flex:none}
+.register-sheet>.print-footer{flex:none;margin-top:auto;padding-top:3mm}
+.sticker-sheet{display:grid;justify-content:start}
 .sticker-tag-dialog{width:min(500px,95vw)}
 .sticker-tag-dialog .modal-head{align-items:center}
 .sticker-tag-dialog .modal-head h2{margin:0}
@@ -219,6 +228,36 @@ fieldset.form-grid{border:0;margin:0;padding:0;min-width:0}
   [data-theme="dark"] .form-section-title{border-bottom-color:var(--line)}
 }
 
+.print-header{display:grid;row-gap:0.5in;margin-bottom:9px;break-inside:avoid}
+.print-letterhead{display:grid;grid-template-columns:104px minmax(0,1fr);align-items:center;gap:10px}
+.print-letterhead>.app-logo{width:64px;justify-self:center}
+.print-letterhead-with-image{grid-template-columns:minmax(0,1fr)}
+.print-header-text{font-size:8pt;line-height:1.4;white-space:pre-line}
+.print-header-image,.print-footer-image{display:block;width:100%;height:auto;object-fit:contain}
+.print-header-image{max-height:42mm}
+.print-footer-image{max-height:30mm}
+.print-office-name{font-weight:bold}
+.print-heading h1{text-align:center;font-size:13pt;letter-spacing:.4pt;margin:0 0 4px}
+.print-heading span{display:block;text-align:right;font-size:8pt;color:#5f675a}
+.print-meta{text-align:right;color:#60665b;font-size:7pt;margin:0 0 9px}
+.print-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7pt}
+.print-table th{background:#edf1e9!important;color:#374638;font-size:7pt;letter-spacing:0;text-transform:none;height:auto;padding:5px 4px;border:1px solid #cfd6ca;white-space:normal;overflow-wrap:anywhere}
+.print-table td{height:auto;white-space:normal;overflow-wrap:anywhere;vertical-align:top;padding:5px 4px;border:1px solid #d9ddd5;color:#30352e;font-size:7pt}
+.print-table tr{break-inside:avoid}
+.print-record{break-inside:avoid;border:1px solid #d9ddd5;padding:8px 10px;margin:0 0 9px}
+.print-record h2{font-size:10pt;margin:0 0 7px;border-bottom:1px solid #e3e6df;padding-bottom:5px}.print-record h2 small{font-weight:normal;color:#66715f}
+.print-field-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px 12px}
+.print-field{min-width:0;display:flex;flex-direction:column;gap:3px;break-inside:avoid}.print-field b{font-size:6.5pt;color:#66715f;text-transform:uppercase;letter-spacing:.2pt}.print-field span{font-size:7.5pt;white-space:pre-wrap;overflow-wrap:anywhere}
+.print-signatories{display:flex;justify-content:space-around;gap:30px;margin:22px 8px 9px;break-inside:avoid}
+.print-signatory{display:flex;flex:0 1 33.333%;min-width:0;flex-direction:column;align-items:center;text-align:center;min-height:62px;font-size:8pt}
+.signature-space{height:24px;width:85%;border-bottom:1px solid #4c5149;margin-bottom:5px}
+.print-signatory b{font-size:8pt}.print-signatory span,.print-signatory small{font-size:7pt;color:#4f554d;margin-top:2px}.print-signatory small{color:#73786e}
+.print-page-flow{table-layout:fixed;white-space:normal}
+.print-page-flow>tbody>tr>td,.print-page-flow>tfoot>tr>td{height:auto;padding:0;border:0;vertical-align:top;font:inherit;color:inherit}
+.print-page-flow>tfoot{display:table-footer-group;break-inside:avoid;visibility:hidden}
+.print-page-flow>tfoot>tr>td{padding-top:3mm}
+.print-footer{text-align:center;color:#697164;font:7pt Arial,sans-serif;white-space:pre-wrap}
+
 @page{
   size:landscape;
   margin:6.35mm 12mm;
@@ -229,36 +268,8 @@ fieldset.form-grid{border:0;margin:0;padding:0;min-width:0}
   .app-shell{display:block;min-height:0;background:#fff}
   .app-shell > :not(.print-document){display:none!important}
   .print-document{display:block;width:100%;background:#fff;color:#20251e;font-family:Arial,sans-serif;font-size:8pt;overflow-wrap:anywhere}
-  .sticker-sheet{display:grid;justify-content:start;break-inside:avoid}
-  .sticker-sheet + .sticker-sheet{break-before:page}
-  .print-header{display:grid;row-gap:0.5in;margin-bottom:9px;break-inside:avoid}
-  .print-letterhead{display:grid;grid-template-columns:104px minmax(0,1fr);align-items:center;gap:10px}
-  .print-letterhead>.app-logo{width:64px;justify-self:center}
-  .print-letterhead-with-image{grid-template-columns:minmax(0,1fr)}
-  .print-header-text{font-size:8pt;line-height:1.4;white-space:pre-line}
-  .print-header-image,.print-footer-image{display:block;width:100%;height:auto;object-fit:contain}
-  .print-header-image{max-height:42mm}
-  .print-footer-image{max-height:30mm}
-  .print-office-name{font-weight:bold}
-  .print-heading h1{text-align:center;font-size:13pt;letter-spacing:.4pt;margin:0 0 4px}
-  .print-heading span{display:block;text-align:right;font-size:8pt;color:#5f675a}
-  .print-meta{text-align:right;color:#60665b;font-size:7pt;margin:0 0 9px}
-  .print-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7pt}
-  .print-table th{background:#edf1e9!important;color:#374638;font-size:7pt;letter-spacing:0;text-transform:none;height:auto;padding:5px 4px;border:1px solid #cfd6ca;white-space:normal;overflow-wrap:anywhere}
-  .print-table td{height:auto;white-space:normal;overflow-wrap:anywhere;vertical-align:top;padding:5px 4px;border:1px solid #d9ddd5;color:#30352e;font-size:7pt}
-  .print-table tr{break-inside:avoid}
-  .print-record{break-inside:avoid;border:1px solid #d9ddd5;padding:8px 10px;margin:0 0 9px}
-  .print-record h2{font-size:10pt;margin:0 0 7px;border-bottom:1px solid #e3e6df;padding-bottom:5px}.print-record h2 small{font-weight:normal;color:#66715f}
-  .print-field-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px 12px}
-  .print-field{min-width:0;display:flex;flex-direction:column;gap:3px;break-inside:avoid}.print-field b{font-size:6.5pt;color:#66715f;text-transform:uppercase;letter-spacing:.2pt}.print-field span{font-size:7.5pt;white-space:pre-wrap;overflow-wrap:anywhere}
-  .print-signatories{display:flex;justify-content:space-around;gap:30px;margin:22px 8px 9px;break-inside:avoid}
-  .print-signatory{display:flex;flex:0 1 33.333%;min-width:0;flex-direction:column;align-items:center;text-align:center;min-height:62px;font-size:8pt}
-  .signature-space{height:24px;width:85%;border-bottom:1px solid #4c5149;margin-bottom:5px}
-  .print-signatory b{font-size:8pt}.print-signatory span,.print-signatory small{font-size:7pt;color:#4f554d;margin-top:2px}.print-signatory small{color:#73786e}
-  .print-page-flow{table-layout:fixed;white-space:normal}
-  .print-page-flow>tbody>tr>td,.print-page-flow>tfoot>tr>td{height:auto;padding:0;border:0;vertical-align:top;font:inherit;color:inherit}
-  .print-page-flow>tfoot{display:table-footer-group;break-inside:avoid;visibility:hidden}
-  .print-page-flow>tfoot>tr>td{padding-top:3mm}
-  .print-footer{text-align:center;color:#697164;font:7pt Arial,sans-serif;white-space:pre-wrap}
+  .sticker-sheet{break-inside:avoid}
+  .sticker-sheet + .sticker-sheet,.register-sheet + .register-sheet{break-before:page}
+  .register-sheet{break-inside:avoid}
   .print-page-footer{position:fixed;bottom:0;left:0;right:0}
 }

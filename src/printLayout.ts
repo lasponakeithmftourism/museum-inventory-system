@@ -8,6 +8,8 @@ export const PAPER_SIZES = {
   A3: { label: 'A3 · 297 × 420 mm', width: 297, height: 420 },
 };
 
+export const PIXELS_PER_MM = 96 / 25.4;
+
 export const MARGIN_SIDES = ['top', 'right', 'bottom', 'left'] as const;
 type MarginSide = typeof MARGIN_SIDES[number];
 
@@ -36,8 +38,7 @@ export function printGeometry(layout: PrintLayout): PrintGeometry | null {
     top: Number(layout.margins.top), right: Number(layout.margins.right),
     bottom: Number(layout.margins.bottom), left: Number(layout.margins.left),
   };
-  const paperWidth = landscape ? height : width;
-  const paperHeight = landscape ? width : height;
+  const { width: paperWidth, height: paperHeight } = paperDimensions({ width, height, landscape });
 
   if (MARGIN_SIDES.some(side => !layout.margins[side].trim() || !Number.isFinite(margins[side]) || margins[side] < 0)
       || margins.left + margins.right >= paperWidth || margins.top + margins.bottom >= paperHeight) return null;
@@ -45,9 +46,12 @@ export function printGeometry(layout: PrintLayout): PrintGeometry | null {
   return { width, height, landscape, margins };
 }
 
+export function paperDimensions({ width, height, landscape }: Pick<PrintGeometry, 'width' | 'height' | 'landscape'>) {
+  return landscape ? { width: height, height: width } : { width, height };
+}
+
 export function printPageCss(page: PrintGeometry) {
-  const width = page.landscape ? page.height : page.width;
-  const height = page.landscape ? page.width : page.height;
+  const { width, height } = paperDimensions(page);
   const margin = MARGIN_SIDES.map(side => `${page.margins[side]}mm`).join(' ');
   return `@page { size: ${width}mm ${height}mm; margin: ${margin}; }`;
 }

@@ -22,6 +22,7 @@ import {
 } from './records';
 import type { Item, PrintRecordFilters, PrintSettings, SavedItem } from './records';
 import { PrintPreview, PrintRecordFilterFields } from './PrintPreview';
+import { BrowserRegisterPreview } from './BrowserRegisterPreview';
 import { StickerTagDialog } from './StickerTag';
 import { TagGenerator } from './TagGenerator';
 import { PRINT_IMAGE_TYPES, preparePrintImage } from './printImage';
@@ -161,6 +162,12 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
     }, failure => setPrintError(firestoreMessage(failure, 'Could not load print settings.')));
   }, [database]);
 
+  const categoryLabel = typeFilter === 'All types'
+    ? null
+    : Object.entries(CATEGORY_LABELS).find(([type]) => type === typeFilter)?.[1] ?? typeFilter;
+  const categoryItems = useMemo(() => typeFilter === 'All types' ? items : items.filter(item => item.itemType === typeFilter),
+    [items, typeFilter]);
+
   const matchingItems = useMemo(() => {
     const term = search.trim().toLowerCase();
     return items.filter(item => (
@@ -174,9 +181,9 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
   const selected = items.find(item => item.id === selectedId);
   const types = [...new Set([...TYPES, ...items.map(item => item.itemType), typeFilter])].filter(type => type !== 'All types');
   const statuses = [...new Set([...OWNERSHIP_STATUSES, ...items.map(item => item.ownershipLoanStatus), ownershipFilter])].filter(status => status !== 'All statuses');
-  const ownedCount = items.filter(item => item.ownershipLoanStatus.toLowerCase() === 'owned').length;
-  const loansCount = items.filter(item => /\b(loan|borrowed)\b/i.test(item.ownershipLoanStatus)).length;
-  const attentionCount = items.filter(item => conditionTone(item.condition) !== 'good').length;
+  const ownedCount = categoryItems.filter(item => item.ownershipLoanStatus.toLowerCase() === 'owned').length;
+  const loansCount = categoryItems.filter(item => /\b(loan|borrowed)\b/i.test(item.ownershipLoanStatus)).length;
+  const attentionCount = categoryItems.filter(item => conditionTone(item.condition) !== 'good').length;
 
   const liveSelection = useMemo<PrintSelection>(() => ({
     items: filtered, filters: { year: '', types: typeFilter === 'All types' ? [] : [typeFilter] },
@@ -192,6 +199,7 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
   const printYears = useMemo(() => inventoryYears(previewItems ?? []), [previewItems]);
   const printTypes = useMemo(() => [...new Set([...TYPES, ...(previewItems ?? []).map(item => item.itemType)])], [previewItems]);
   const page = useMemo(() => printGeometry(printLayout), [printLayout]);
+  const RegisterPreview = window.museumPrinting ? PrintPreview : BrowserRegisterPreview;
   const printDocument = useMemo(() => <PrintDocument {...selection} format={printFormat} settings={printSettings ?? DEFAULT_PRINT_SETTINGS}/>,
     [selection, printFormat, printSettings]);
 
@@ -327,7 +335,7 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
     </aside>
     <main className="main-area">
       <header className="topbar">
-        <div className="breadcrumbs"><span>Collections</span><span className="crumb-sep">/</span><b>Register</b></div>
+        <div className="breadcrumbs"><span>Collections</span><span className="crumb-sep">/</span><b>{categoryLabel ?? 'Register'}</b></div>
         <div className="top-actions">
           <div className="cloud-status" role="status" data-sync-status={syncStatus}><span className="status-dot"/> {syncLabel}</div>
           <button className="button button-light" disabled={!printSettings} onClick={() => setPrintSetupOpen(true)}><Settings2 size={15}/> Print setup</button>
@@ -344,14 +352,14 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
           <RegisterClock/>
         </div>
         <section className="stats-grid">
-          <Stat label="Total records" value={items.length} icon={<Archive size={18}/>} caption="Across all collection types" tone="sand"/>
+          <Stat label="Total records" value={categoryItems.length} icon={<Archive size={18}/>} caption={categoryLabel ?? 'Across all collection types'} tone="sand"/>
           <Stat label="Owned by museum" value={ownedCount} icon={<ShieldCheck size={18}/>} caption="Ownership marked as owned" tone="green"/>
           <Stat label="On loan / borrowed" value={loansCount} icon={<ArrowUpRight size={18}/>} caption="Records with loan status" tone="blue"/>
           <Stat label="Needs attention" value={attentionCount} icon={<CircleAlert size={18}/>} caption="Condition review suggested" tone="amber"/>
         </section>
         <section className="register-card">
           <div className="register-header">
-            <div><h2>All Collection Records</h2><span>{filtered.length} {filtered.length === 1 ? 'record' : 'records'} shown</span></div>
+            <div><h2>{categoryLabel ?? 'All'} Collection Records</h2><span>{filtered.length} {filtered.length === 1 ? 'record' : 'records'} shown</span></div>
             <div className="register-actions">
               <div className="searchbox">
                 <Search size={16}/><input aria-label="Search collection" placeholder="Search records…" value={search} onChange={e => setSearch(e.target.value)}/>
@@ -392,17 +400,17 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
               <div className="empty-state">
                 <div className="empty-icon">{loading ? <LoaderCircle className="spin" size={22}/> : <PackageOpen size={22}/>}</div>
                 {loading ? <b>Loading collection records…</b> : syncStatus === 'error' ? <b>Records unavailable</b> :
-                  items.length ? <><b>No matching records</b><span>Try another search or filter.</span></> :
+                  categoryLabel && !categoryItems.length ? <b>No records in {categoryLabel}</b> :
+                  categoryItems.length ? <><b>No matching records</b><span>Try another search or filter.</span></> :
                   <><b>Your register is ready</b><span>Add the first collection record to begin documenting your holdings.</span>
                     <button className="button button-primary" onClick={() => setEditing('new')}><Plus size={16}/> Add first record</button></>}
               </div>
             </td></tr>}
           </tbody></table></div>
-          <div className="table-footer"><span>Showing <b>{filtered.length}</b> of <b>{items.length}</b> records</span>
+          <div className="table-footer"><span>Showing <b>{filtered.length}</b> of <b>{categoryItems.length}</b> records</span>
             {syncStatus === 'synced' && <span className="footer-live"><span className="status-dot"/> Live updates on</span>}
           </div>
         </section>
-        <footer className="page-footer"><span>Office of the Municipal Tourism</span><span>Inventory Records are automatically stored online.</span></footer>
       </div>
     </main>
     {tagDialog === 'generator' && <TagGenerator items={items} logo={<AppLogo forPrint/>} onClose={() => setTagDialog(null)}/>}
@@ -410,8 +418,7 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
       onClose={() => setTagDialog(null)}/>}
     {!tagDialog && <>
       {page && <style>{printPageCss(page)}</style>}
-      {printDocument}
-      {printSelection && <PrintPreview job={{ kind: 'register', count: selection.items.length }} content={printDocument}
+      {printSelection ? <RegisterPreview job={{ kind: 'register', count: selection.items.length }} content={printDocument}
         layout={printLayout} page={page} onLayout={setPrintLayout} onClose={() => setPrintSelection(null)}
         onSetup={printSettings ? () => setPrintSetupOpen(true) : undefined}>
         <PrintRecordFilterFields filters={printSelection.filters} years={printYears} types={printTypes}
@@ -422,7 +429,7 @@ function Register({ user, database, onSignOut, darkMode, onToggleTheme }: {
             <option value="full">Full record details</option>
           </select>
         </label>
-      </PrintPreview>}
+      </RegisterPreview> : printDocument}
     </>}
     {printSetupOpen && printSettings && <PrintSetupModal settings={printSettings} onClose={() => setPrintSetupOpen(false)} onSave={savePrintSettings}/>}
     {selected && !tagDialog && <DetailPanel item={selected} driveAccount={driveAccount} drive={drive} onClose={() => setSelectedId(null)} onEdit={() => setEditing(selected)}
